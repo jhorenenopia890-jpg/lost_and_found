@@ -1,0 +1,333 @@
+    <!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lost & Found System</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="bg-slate-50 text-slate-800 font-sans antialiased min-h-screen flex flex-col justify-between">
+
+    <!-- Navigation -->
+    <header class="bg-white border-b border-slate-200 sticky top-0 z-40">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <span class="bg-indigo-600 text-white p-2.5 rounded-xl font-bold text-lg shadow-sm">
+                    <i class="fa-solid fa-box-archive"></i>
+                </span>
+                <h1 class="text-xl font-semibold tracking-tight text-slate-900">Lost & Found</h1>
+            </div>
+            <div id="nav-auth">
+                <!-- Will be filled by JS -->
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-grow w-full">
+        <div id="landing" class="text-center py-20 space-y-6 max-w-2xl mx-auto">
+            <div class="inline-flex items-center justify-center p-4 bg-indigo-50 rounded-2xl text-indigo-600 mb-2 shadow-sm">
+                <i class="fa-solid fa-magnifying-glass text-3xl"></i>
+            </div>
+            <h2 class="text-4xl font-extrabold tracking-tight text-slate-900 sm:text-5xl">
+                Lost something? Found something?
+            </h2>
+            <p class="text-lg text-slate-600">
+                Report, track items, and communicate securely within your community.
+            </p>
+            <div class="flex justify-center gap-4 pt-4">
+                <button onclick="openRegisterModal()" class="bg-indigo-600 text-white font-medium px-6 py-3 rounded-xl hover:bg-indigo-700 transition shadow-sm flex items-center gap-2">
+                    <i class="fa-solid fa-rocket"></i> Get Started Now
+                </button>
+            </div>
+        </div>
+
+        <div id="dashboard" class="hidden space-y-6">
+            <!-- Dashboard header -->
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                <div>
+                    <h2 class="text-2xl font-bold tracking-tight text-slate-900">
+                        <i class="fa-solid fa-gauge text-indigo-600 mr-2"></i> Dashboard
+                    </h2>
+                    <p class="text-sm text-slate-500">Manage, track, claim, and communicate about lost or found reports.</p>
+                </div>
+                <button id="btn-new-report" onclick="openReportModal()" class="hidden bg-indigo-600 text-white text-sm font-medium px-4 py-2.5 rounded-xl hover:bg-indigo-700 transition flex items-center gap-2 shadow-sm">
+                    <i class="fa-solid fa-plus"></i> New Report
+                </button>
+            </div>
+
+            <!-- Admin Stats -->
+            <div id="admin-stats" class="hidden grid grid-cols-1 sm:grid-cols-4 gap-4">
+                <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+                    <div>
+                        <p class="text-xs font-semibold uppercase text-slate-400">Total Reports</p>
+                        <h3 id="stat-total" class="text-2xl font-bold text-slate-900 mt-1">0</h3>
+                    </div>
+                    <div class="w-12 h-12 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center text-lg">
+                        <i class="fa-solid fa-clipboard-list"></i>
+                    </div>
+                </div>
+                <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+                    <div>
+                        <p class="text-xs font-semibold uppercase text-slate-400">Active</p>
+                        <h3 id="stat-active" class="text-2xl font-bold text-amber-600 mt-1">0</h3>
+                    </div>
+                    <div class="w-12 h-12 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center text-lg">
+                        <i class="fa-solid fa-clock"></i>
+                    </div>
+                </div>
+                <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+                    <div>
+                        <p class="text-xs font-semibold uppercase text-slate-400">Pending</p>
+                        <h3 id="stat-pending" class="text-2xl font-bold text-purple-600 mt-1">0</h3>
+                    </div>
+                    <div class="w-12 h-12 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center text-lg">
+                        <i class="fa-solid fa-hourglass-half"></i>
+                    </div>
+                </div>
+                <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+                    <div>
+                        <p class="text-xs font-semibold uppercase text-slate-400">Claimed</p>
+                        <h3 id="stat-claimed" class="text-2xl font-bold text-emerald-600 mt-1">0</h3>
+                    </div>
+                    <div class="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-lg">
+                        <i class="fa-solid fa-circle-check"></i>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Reports -->
+            <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                <div class="p-6 border-b border-slate-200">
+                    <h3 class="text-lg font-semibold text-slate-900">
+                        <i class="fa-solid fa-list-ul mr-2 text-indigo-600"></i> All Reports
+                    </h3>
+                </div>
+                <div id="reports-container" class="p-6 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+                    <p class="text-sm text-slate-500">Loading reports...</p>
+                </div>
+            </div>
+
+            <!-- Admin User Management -->
+            <div id="admin-users-section" class="hidden bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mt-8">
+                <div class="p-6 border-b border-slate-200 flex justify-between items-center">
+                    <h3 class="text-lg font-semibold text-slate-900">
+                        <i class="fa-solid fa-users-gear mr-2 text-indigo-600"></i> Admin User Management
+                    </h3>
+                    <button onclick="openAdminCreateModal()" class="bg-slate-900 text-white text-xs font-medium px-3.5 py-2 rounded-xl hover:bg-slate-800 transition shadow-sm">
+                        <i class="fa-solid fa-user-plus mr-1"></i> Create Staff/Admin
+                    </button>
+                </div>
+                <div id="users-container" class="p-6 overflow-x-auto">
+                    <p class="text-sm text-slate-500">Loading users...</p>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- ==================== MODALS ==================== -->
+
+    <!-- Login Modal -->
+    <div id="loginModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+        <div class="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 space-y-6 border border-slate-100">
+            <div class="flex justify-between items-center">
+                <h3 class="text-xl font-bold text-slate-900"><i class="fa-solid fa-right-to-bracket text-indigo-600 mr-2"></i> Login</h3>
+                <button onclick="closeLoginModal()" class="text-slate-400 hover:text-slate-600 text-xl font-bold">&times;</button>
+            </div>
+            <form onsubmit="handleLogin(event)" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Email</label>
+                    <input type="email" id="loginEmail" required class="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Password</label>
+                    <input type="password" id="loginPassword" required class="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm">
+                </div>
+                <button type="submit" class="w-full bg-indigo-600 text-white py-2.5 rounded-xl font-medium hover:bg-indigo-700 transition shadow-sm">Login</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Register Modal -->
+    <div id="registerModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+        <div class="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 space-y-5 border border-slate-100 max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-center">
+                <h3 class="text-xl font-bold text-slate-900"><i class="fa-solid fa-user-plus text-indigo-600 mr-2"></i> Create Account</h3>
+                <button onclick="closeRegisterModal()" class="text-slate-400 hover:text-slate-600 text-xl font-bold">&times;</button>
+            </div>
+            <form onsubmit="handleRegister(event)" class="space-y-3.5">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Username</label>
+                    <input type="text" id="regUsername" required class="w-full px-4 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Email</label>
+                    <input type="email" id="regEmail" required class="w-full px-4 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Password</label>
+                    <input type="password" id="regPassword" required minlength="6" class="w-full px-4 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Contact Number (11 digits)</label>
+                    <input type="text" id="regContact" required maxlength="11" pattern="[0-9]{11}" placeholder="09123456789" class="w-full px-4 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Address</label>
+                    <input type="text" id="regAddress" required class="w-full px-4 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm">
+                </div>
+                <button type="submit" class="w-full bg-indigo-600 text-white py-2.5 rounded-xl font-medium hover:bg-indigo-700 transition mt-2 shadow-sm">Register</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Admin Create User Modal -->
+    <div id="adminCreateModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+        <div class="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 space-y-5 border border-slate-100">
+            <div class="flex justify-between items-center">
+                <h3 class="text-xl font-bold text-slate-900"><i class="fa-solid fa-user-shield text-slate-900 mr-2"></i> Create Staff or Admin</h3>
+                <button onclick="closeAdminCreateModal()" class="text-slate-400 hover:text-slate-600 text-xl font-bold">&times;</button>
+            </div>
+            <form onsubmit="handleAdminCreateUser(event)" class="space-y-3.5">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Role</label>
+                    <select id="adminNewRole" required class="w-full px-4 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm bg-white">
+                        <option value="staff">Staff</option>
+                        <option value="admin">Admin</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Username</label>
+                    <input type="text" id="adminNewUsername" required class="w-full px-4 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Email</label>
+                    <input type="email" id="adminNewEmail" required class="w-full px-4 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Password</label>
+                    <input type="password" id="adminNewPassword" required minlength="6" class="w-full px-4 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm">
+                </div>
+                <button type="submit" class="w-full bg-slate-900 text-white py-2.5 rounded-xl font-medium hover:bg-slate-800 transition mt-2 shadow-sm">Create Account</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Report Modal -->
+    <div id="reportModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+        <div class="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 space-y-5 border border-slate-100 max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-center">
+                <h3 id="reportModalTitle" class="text-xl font-bold text-slate-900">
+                    <i class="fa-solid fa-file-circle-plus text-indigo-600 mr-2"></i> New Report
+                </h3>
+                <button onclick="closeReportModal()" class="text-slate-400 hover:text-slate-600 text-xl font-bold">&times;</button>
+            </div>
+            <form onsubmit="handleSaveReport(event)" class="space-y-3.5">
+                <input type="hidden" id="reportId">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Report Type</label>
+                    <select id="reportType" required class="w-full px-4 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm bg-white">
+                        <option value="lost">Lost Item</option>
+                        <option value="found">Found Item</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Item Name</label>
+                    <input type="text" id="reportItemName" required class="w-full px-4 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Description</label>
+                    <textarea id="reportDescription" rows="3" class="w-full px-4 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"></textarea>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Place Lost / Found</label>
+                    <input type="text" id="reportPlace" required class="w-full px-4 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Date</label>
+                    <input type="date" id="reportDate" required class="w-full px-4 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Item Image (Optional)</label>
+                    <input type="file" id="reportImageFile" accept="image/*" class="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700">
+                    <input type="hidden" id="reportImageBase64">
+                </div>
+                <button type="submit" class="w-full bg-indigo-600 text-white py-2.5 rounded-xl font-medium hover:bg-indigo-700 transition mt-2 shadow-sm">Save Report</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Claim Modal -->
+    <div id="claimModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+        <div class="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 space-y-4 border border-slate-100">
+            <div class="flex justify-between items-center">
+                <h3 class="text-xl font-bold text-slate-900"><i class="fa-solid fa-shield-check text-indigo-600 mr-2"></i> Provide Claim Proof</h3>
+                <button onclick="closeClaimModal()" class="text-slate-400 hover:text-slate-600 text-xl font-bold">&times;</button>
+            </div>
+            <p class="text-sm text-slate-600">Please provide proof or specific details proving this item belongs to you:</p>
+            <input type="hidden" id="claimReportId">
+            <textarea id="claimProofText" rows="4" placeholder="e.g. It has a blue keychain, contains my student ID inside..." class="w-full px-4 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"></textarea>
+            <button onclick="submitClaimWithProof()" class="w-full bg-indigo-600 text-white py-2.5 rounded-xl font-medium hover:bg-indigo-700 transition shadow-sm">Submit Claim for Review</button>
+        </div>
+    </div>
+
+    <!-- Chat Modal -->
+    <div id="chatModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+        <div class="bg-white rounded-2xl shadow-xl max-w-lg w-full p-6 space-y-4 border border-slate-100 flex flex-col h-[80vh]">
+            <div class="flex justify-between items-center border-b pb-3">
+                <h3 class="text-xl font-bold text-slate-900"><i class="fa-solid fa-comments text-indigo-600 mr-2"></i> Conversation</h3>
+                <button onclick="closeChatModal()" class="text-slate-400 hover:text-slate-600 text-xl font-bold">&times;</button>
+            </div>
+            <input type="hidden" id="chatReportId">
+            <div id="chatMessagesContainer" class="flex-grow overflow-y-auto space-y-3 p-2 bg-slate-50 rounded-xl border border-slate-200"></div>
+            <div class="flex gap-2 pt-2">
+                <input type="text" id="chatInputMessage" placeholder="Type a message..." class="flex-grow px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm">
+                <button onclick="sendChatMessage()" class="bg-indigo-600 text-white px-5 py-2.5 rounded-xl font-medium hover:bg-indigo-700 transition shadow-sm">
+                    <i class="fa-solid fa-paper-plane"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Alert Modal -->
+    <div id="alertModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+        <div class="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6 space-y-4 border border-slate-100 text-center">
+            <div class="w-12 h-12 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center mx-auto text-xl">
+                <i class="fa-solid fa-bell"></i>
+            </div>
+            <h3 id="alertTitle" class="text-lg font-bold text-slate-900">Notice</h3>
+            <p id="alertMessage" class="text-sm text-slate-600"></p>
+            <button onclick="closeAlertModal()" class="w-full bg-indigo-600 text-white py-2.5 rounded-xl font-medium hover:bg-indigo-700 transition shadow-sm">OK</button>
+        </div>
+    </div>
+
+    <!-- Confirm Modal -->
+    <div id="confirmModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+        <div class="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6 space-y-4 border border-slate-100 text-center">
+            <div class="w-12 h-12 rounded-full bg-red-50 text-red-600 flex items-center justify-center mx-auto text-xl">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+            </div>
+            <h3 id="confirmTitle" class="text-lg font-bold text-slate-900">Are you sure?</h3>
+            <p id="confirmMessage" class="text-sm text-slate-600"></p>
+            <div class="flex gap-3 pt-2">
+                <button onclick="closeConfirmModal()" class="flex-1 bg-slate-100 text-slate-700 py-2.5 rounded-xl font-medium hover:bg-slate-200 transition">Cancel</button>
+                <button id="confirmActionBtn" class="flex-1 bg-red-600 text-white py-2.5 rounded-xl font-medium hover:bg-red-700 transition shadow-sm">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <footer class="bg-white border-t border-slate-200 py-6 text-center text-sm text-slate-500">
+        <p><i class="fa-solid fa-shield-heart text-indigo-600 mr-1"></i> Lost & Found Management System</p>
+    </footer>
+
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-firestore-compat.js"></script>
+
+    <!-- Your Firebase Config + App Logic -->
+    <script src="js/firebase-config.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
