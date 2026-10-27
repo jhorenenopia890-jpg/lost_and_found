@@ -1,6 +1,6 @@
 // ====================== GLOBAL STATE ======================
-let currentUser = null;
-let currentUserData = null;
+let currentUser = null;          // Firebase Auth user
+let currentUserData = null;      // Firestore user document
 let cachedReports = [];
 
 // ====================== HELPERS ======================
@@ -38,6 +38,14 @@ function closeRegisterModal() { document.getElementById('registerModal').classLi
 
 function openAdminCreateModal() { document.getElementById('adminCreateModal').classList.remove('hidden'); }
 function closeAdminCreateModal() { document.getElementById('adminCreateModal').classList.add('hidden'); }
+
+function openAdminEditModal(userId, username) {
+    document.getElementById('editUserId').value = userId;
+    document.getElementById('editUsername').value = username;
+    document.getElementById('editPassword').value = '';
+    document.getElementById('adminEditModal').classList.remove('hidden');
+}
+function closeAdminEditModal() { document.getElementById('adminEditModal').classList.add('hidden'); }
 
 function openReportModal(report = null) {
     if (report) {
@@ -91,20 +99,15 @@ document.getElementById('reportImageFile').addEventListener('change', function (
     }
 });
 
-// ====================== AUTH STATE ======================
+// ====================== AUTH ======================
 auth.onAuthStateChanged(async (user) => {
     if (user) {
         currentUser = user;
-        try {
-            const doc = await db.collection('users').doc(user.uid).get();
-            if (doc.exists) {
-                currentUserData = doc.data();
-                showDashboard();
-            } else {
-                await auth.signOut();
-            }
-        } catch (err) {
-            console.error(err);
+        const doc = await db.collection('users').doc(user.uid).get();
+        if (doc.exists) {
+            currentUserData = doc.data();
+            showDashboard();
+        } else {
             await auth.signOut();
         }
     } else {
@@ -133,7 +136,9 @@ function showDashboard() {
     document.getElementById('landing').classList.add('hidden');
     document.getElementById('dashboard').classList.remove('hidden');
 
-    const role = currentUserData.role || 'user';
+    const role = currentUserData.role;
+    const isAdmin = role === 'admin';
+
     document.getElementById('nav-auth').innerHTML = `
         <div class="flex items-center space-x-4">
             <span class="text-sm font-medium text-slate-600 hidden sm:inline">
@@ -149,18 +154,27 @@ function showDashboard() {
         </div>
     `;
 
+    // Show New Report button only for regular users
     document.getElementById('btn-new-report').classList.toggle('hidden', role !== 'user');
-    document.getElementById('admin-stats').classList.toggle('hidden', role !== 'admin');
-    document.getElementById('admin-users-section').classList.toggle('hidden', role !== 'admin');
 
-    loadReports();
-    if (role === 'admin') loadUsers();
+    // Admin view logic: Hide general reports section for admins, show user management section exclusively
+    document.getElementById('reports-section').classList.toggle('hidden', isAdmin);
+    document.getElementById('admin-users-section').classList.toggle('hidden', !isAdmin);
+
+    document.getElementById('dashboard-subtitle').innerText = isAdmin 
+        ? "Manage staff and user accounts, update credentials securely." 
+        : "Manage, track, claim, and communicate about lost or found reports.";
+
+    if (isAdmin) {
+        loadUsers();
+    } else {
+        loadReports();
+    }
 }
 
 // ====================== REGISTER ======================
 async function handleRegister(event) {
     event.preventDefault();
-
     const username = document.getElementById('regUsername').value.trim();
     const email = document.getElementById('regEmail').value.trim();
     const password = document.getElementById('regPassword').value;
@@ -173,82 +187,44 @@ async function handleRegister(event) {
     }
 
     try {
-        // Check username uniqueness
         const usernameCheck = await db.collection('users').where('username', '==', username).get();
         if (!usernameCheck.empty) {
-            showAlert("Username already taken. Please choose another.", "Error");
+            showAlert("Username already taken.", "Error");
             return;
         }
 
-        // Create Auth account
         const cred = await auth.createUserWithEmailAndPassword(email, password);
-
-        // First user becomes admin
         const allUsers = await db.collection('users').get();
         const role = allUsers.empty ? 'admin' : 'user';
 
-        // Save user profile
         await db.collection('users').doc(cred.user.uid).set({
             id: cred.user.uid,
-            username: username,
-            email: email,
-            contact: contact,
-            address: address,
-            role: role,
+            username,
+            email,
+            contact,
+            address,
+            role,
             createdAt: firebase.firestore.FieldValue.serverTimestamp()
         });
 
-        // Success message
-        showAlert("Account created successfully! You can now login.", "Success");
+        showAlert("Account created successfully!", "Success");
         closeRegisterModal();
-
-        // Clear form
-        document.getElementById('regUsername').value = '';
-        document.getElementById('regEmail').value = '';
-        document.getElementById('regPassword').value = '';
-        document.getElementById('regContact').value = '';
-        document.getElementById('regAddress').value = '';
-
-        // Open login modal
-        setTimeout(() => openLoginModal(), 500);
-
     } catch (error) {
-        console.error(error);
-        if (error.code === 'auth/email-already-in-use') {
-            showAlert("This email is already registered. Please login instead.", "Registration Failed");
-        } else {
-            showAlert(error.message, "Registration Failed");
-        }
+        showAlert(error.message, "Registration Failed");
     }
 }
 
-// ====================== LOGIN (using Username) ======================
+// ====================== LOGIN ======================
 async function handleLogin(event) {
     event.preventDefault();
-
-    const usernameOrEmail = document.getElementById('loginEmail').value.trim();
+    const email = document.getElementById('loginEmail').value.trim();
     const password = document.getElementById('loginPassword').value;
 
     try {
-        let email = usernameOrEmail;
-
-        // If user typed username instead of email
-        if (!usernameOrEmail.includes('@')) {
-            const snapshot = await db.collection('users').where('username', '==', usernameOrEmail).get();
-            if (snapshot.empty) {
-                showAlert("Username not found.", "Login Failed");
-                return;
-            }
-            email = snapshot.docs[0].data().email;
-        }
-
         await auth.signInWithEmailAndPassword(email, password);
         closeLoginModal();
-        showAlert("Login successful!", "Welcome");
-
     } catch (error) {
-        console.error(error);
-        showAlert("Invalid username/email or password.", "Login Failed");
+        showAlert("Invalid email or password.", "Login Failed");
     }
 }
 
@@ -268,13 +244,6 @@ async function loadReports() {
             cachedReports.push({ id: doc.id, ...doc.data() });
         });
 
-        if (currentUserData && currentUserData.role === 'admin') {
-            document.getElementById('stat-total').innerText = cachedReports.length;
-            document.getElementById('stat-active').innerText = cachedReports.filter(r => r.status === 'active').length;
-            document.getElementById('stat-pending').innerText = cachedReports.filter(r => r.status === 'pending_approval').length;
-            document.getElementById('stat-claimed').innerText = cachedReports.filter(r => r.status === 'claimed').length;
-        }
-
         if (cachedReports.length === 0) {
             container.innerHTML = `<p class="text-sm text-slate-500 col-span-full">No reports found.</p>`;
             return;
@@ -282,18 +251,8 @@ async function loadReports() {
 
         renderReports();
     } catch (error) {
+        container.innerHTML = `<p class="text-sm text-red-500">Error loading reports.</p>`;
         console.error(error);
-        // Fallback without orderBy if index is missing
-        try {
-            const snapshot = await db.collection('reports').get();
-            cachedReports = [];
-            snapshot.forEach(doc => {
-                cachedReports.push({ id: doc.id, ...doc.data() });
-            });
-            renderReports();
-        } catch (err) {
-            container.innerHTML = `<p class="text-sm text-red-500">Error loading reports.</p>`;
-        }
     }
 }
 
@@ -399,7 +358,6 @@ function renderReports() {
 // ====================== CREATE / UPDATE REPORT ======================
 async function handleSaveReport(event) {
     event.preventDefault();
-
     const reportId = document.getElementById('reportId').value;
     const type = document.getElementById('reportType').value;
     const item_name = document.getElementById('reportItemName').value.trim();
@@ -408,31 +366,20 @@ async function handleSaveReport(event) {
     const date = document.getElementById('reportDate').value;
     const image = document.getElementById('reportImageBase64').value;
 
-    if (!item_name || !place || !date) {
-        showAlert("Please fill in all required fields.", "Validation Error");
-        return;
-    }
-
     try {
         if (reportId) {
-            // Update existing
             await db.collection('reports').doc(reportId).update({
-                item_name,
-                description,
-                place,
-                date,
-                image
+                item_name, description, place, date, image
             });
             showAlert("Report updated successfully!", "Success");
         } else {
-            // Create new
             await db.collection('reports').add({
                 type,
                 item_name,
                 description,
                 place,
                 date,
-                image: image || '',
+                image,
                 status: 'active',
                 reporter_id: currentUser.uid,
                 reporter_username: currentUserData.username,
@@ -442,13 +389,10 @@ async function handleSaveReport(event) {
             });
             showAlert("Report created successfully!", "Success");
         }
-
         closeReportModal();
         loadReports();
-
     } catch (error) {
-        console.error(error);
-        showAlert("Failed to save report: " + error.message, "Error");
+        showAlert(error.message, "Error");
     }
 }
 
@@ -465,16 +409,13 @@ async function submitClaimWithProof() {
     try {
         const reportRef = db.collection('reports').doc(reportId);
         const doc = await reportRef.get();
-        if (!doc.exists) {
-            showAlert("Report not found.", "Error");
-            return;
-        }
+        if (!doc.exists) return;
 
         const report = doc.data();
         const claims = report.claims || [];
 
         if (claims.some(c => c.user_id === currentUser.uid)) {
-            showAlert("You already submitted a claim for this item.", "Error");
+            showAlert("You already claimed this item.", "Error");
             return;
         }
 
@@ -482,28 +423,25 @@ async function submitClaimWithProof() {
             claim_id: db.collection('reports').doc().id,
             user_id: currentUser.uid,
             username: currentUserData.username,
-            proof: proof
+            proof
         });
 
         await reportRef.update({
             status: 'pending_approval',
-            claims: claims
+            claims
         });
 
         closeClaimModal();
         showAlert("Claim submitted for review!", "Success");
         loadReports();
-
     } catch (error) {
-        console.error(error);
-        showAlert("Failed to submit claim.", "Error");
+        showAlert(error.message, "Error");
     }
 }
 
 // ====================== APPROVAL ======================
 async function processApproval(reportId, action, claimId) {
-    const msg = action === 'accept' ? "Accept this claim as the correct match?" : "Reject this claim?";
-    
+    const msg = action === 'accept' ? "Accept this claim?" : "Reject this claim?";
     showConfirm(msg, async () => {
         try {
             const reportRef = db.collection('reports').doc(reportId);
@@ -513,17 +451,15 @@ async function processApproval(reportId, action, claimId) {
 
             if (action === 'accept') {
                 await reportRef.update({ status: 'claimed' });
-                showAlert("Claim approved!", "Success");
             } else {
                 claims = claims.filter(c => c.claim_id !== claimId);
-                const updateData = { claims: claims };
+                const updateData = { claims };
                 if (claims.length === 0) updateData.status = 'active';
                 await reportRef.update(updateData);
-                showAlert("Claim rejected.", "Success");
             }
             loadReports();
         } catch (error) {
-            showAlert("Action failed.", "Error");
+            showAlert(error.message, "Error");
         }
     }, `Confirm ${action.toUpperCase()}`);
 }
@@ -533,10 +469,9 @@ function deleteReport(reportId) {
     showConfirm("Are you sure you want to delete this report?", async () => {
         try {
             await db.collection('reports').doc(reportId).delete();
-            showAlert("Report deleted.", "Success");
             loadReports();
         } catch (error) {
-            showAlert("Failed to delete report.", "Error");
+            showAlert(error.message, "Error");
         }
     }, "Delete Report");
 }
@@ -545,7 +480,7 @@ function deleteReport(reportId) {
 function renderChatMessages(messages) {
     const container = document.getElementById('chatMessagesContainer');
     if (!messages || messages.length === 0) {
-        container.innerHTML = `<p class="text-xs text-slate-400 text-center py-4">No messages yet. Start the conversation!</p>`;
+        container.innerHTML = `<p class="text-xs text-slate-400 text-center py-4">No messages yet.</p>`;
         return;
     }
     container.innerHTML = messages.map(m => `
@@ -573,18 +508,16 @@ async function sendChatMessage() {
             sender_id: currentUser.uid,
             sender_username: currentUserData.username,
             sender_role: currentUserData.role,
-            message: message,
+            message,
             timestamp: new Date().toISOString()
         });
 
-        await reportRef.update({ messages: messages });
+        await reportRef.update({ messages });
         document.getElementById('chatInputMessage').value = '';
         renderChatMessages(messages);
 
-        // Update cache
         const report = cachedReports.find(r => r.id === reportId);
         if (report) report.messages = messages;
-
     } catch (error) {
         showAlert("Failed to send message.", "Error");
     }
@@ -616,11 +549,14 @@ async function loadUsers() {
                     <td class="py-3.5 px-4 text-slate-600">${u.email}</td>
                     <td class="py-3.5 px-4"><span class="px-2.5 py-1 rounded-full bg-slate-100 text-xs font-semibold text-slate-700">${u.role}</span></td>
                     <td class="py-3.5 px-4 text-right space-x-2">
-                        ${u.username !== currentUserData.username ? `
+                        <button onclick="openAdminEditModal('${doc.id}', '${u.username}')" class="text-xs text-indigo-600 hover:text-indigo-800 font-medium px-2.5 py-1 rounded-md bg-indigo-50 transition">
+                            <i class="fa-solid fa-pen-to-square"></i> Edit
+                        </button>
+                        ${u.role !== 'admin' || u.username !== currentUserData.username ? `
                             <button onclick="deleteUser('${doc.id}', '${u.username}')" class="text-xs text-red-600 hover:text-red-800 font-medium px-2.5 py-1 rounded-md bg-red-50 transition">
                                 <i class="fa-solid fa-trash"></i> Delete
                             </button>
-                        ` : `<span class="text-xs text-slate-400 italic">You</span>`}
+                        ` : `<span class="text-xs text-slate-400 italic">Protected</span>`}
                     </td>
                 </tr>
             `;
@@ -641,6 +577,12 @@ async function handleAdminCreateUser(event) {
     const password = document.getElementById('adminNewPassword').value;
 
     try {
+        const usernameCheck = await db.collection('users').where('username', '==', username).get();
+        if (!usernameCheck.empty) {
+            showAlert("Username already taken.", "Error");
+            return;
+        }
+
         const cred = await auth.createUserWithEmailAndPassword(email, password);
 
         await db.collection('users').doc(cred.user.uid).set({
@@ -653,11 +595,59 @@ async function handleAdminCreateUser(event) {
             createdAt: firebase.firestore.FieldValue.serverTimestamp()
         });
 
-        showAlert(`${role} account created successfully!`, "Success");
+        showAlert(`${role} account created successfully! Please log out and back in as admin.`, "Success");
         closeAdminCreateModal();
-        await auth.signOut(); // force re-login as admin
+        await auth.signOut();
     } catch (error) {
         showAlert(error.message, "Error");
+    }
+}
+
+async function handleAdminUpdateUser(event) {
+    event.preventDefault();
+    const userId = document.getElementById('editUserId').value;
+    const newUsername = document.getElementById('editUsername').value.trim();
+    const newPassword = document.getElementById('editPassword').value;
+
+    try {
+        // Check uniqueness of username if changed
+        const userDocRef = db.collection('users').doc(userId);
+        const userDoc = await userDocRef.get();
+        if (!userDoc.exists) return;
+
+        if (userDoc.data().username !== newUsername) {
+            const usernameCheck = await db.collection('users').where('username', '==', newUsername).get();
+            if (!usernameCheck.empty) {
+                showAlert("Username is already taken by another account.", "Error");
+                return;
+            }
+        }
+
+        // Update Firestore username
+        await userDocRef.update({ username: newUsername });
+
+        // Note: Client-side Firebase Auth password updates require the user to be currently signed in.
+        // If updating another user's password client-side, Firestore updates the profile data. 
+        // For security, true backend password resets are typically handled via Firebase Admin SDK or auth.sendPasswordResetEmail.
+        if (newPassword && newPassword.length >= 6) {
+            if (userId === currentUser.uid) {
+                await currentUser.updatePassword(newPassword);
+            } else {
+                // If updating another user's auth credential directly from client SDK without session, 
+                // send a password reset email as a secure alternative fallback:
+                await auth.sendPasswordResetEmail(userDoc.data().email);
+                showAlert("Username updated. A password reset email was sent to the user's email address.", "Success");
+                closeAdminEditModal();
+                loadUsers();
+                return;
+            }
+        }
+
+        showAlert("User credentials updated successfully!", "Success");
+        closeAdminEditModal();
+        loadUsers();
+    } catch (error) {
+        showAlert(error.message, "Error updating user");
     }
 }
 
@@ -665,10 +655,10 @@ function deleteUser(userId, username) {
     showConfirm(`Delete user "${username}"?`, async () => {
         try {
             await db.collection('users').doc(userId).delete();
-            showAlert("User deleted.", "Success");
             loadUsers();
+            showAlert("User deleted from database.", "Success");
         } catch (error) {
-            showAlert("Failed to delete user.", "Error");
+            showAlert(error.message, "Error");
         }
     }, "Delete User");
 }
