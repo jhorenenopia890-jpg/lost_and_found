@@ -1,6 +1,6 @@
 // ====================== GLOBAL STATE ======================
-let currentUser = null;
-let currentUserData = null;
+let currentUser = null;          // Firebase Auth user
+let currentUserData = null;      // Firestore user document
 let cachedReports = [];
 
 // ====================== HELPERS ======================
@@ -91,7 +91,7 @@ document.getElementById('reportImageFile').addEventListener('change', function (
     }
 });
 
-// ====================== AUTH STATE ======================
+// ====================== AUTH ======================
 auth.onAuthStateChanged(async (user) => {
     if (user) {
         currentUser = user;
@@ -103,9 +103,8 @@ auth.onAuthStateChanged(async (user) => {
             } else {
                 await auth.signOut();
             }
-        } catch (err) {
-            console.error(err);
-            await auth.signOut();
+        } catch (e) {
+            console.error("Auth state user load error:", e);
         }
     } else {
         currentUser = null;
@@ -133,7 +132,7 @@ function showDashboard() {
     document.getElementById('landing').classList.add('hidden');
     document.getElementById('dashboard').classList.remove('hidden');
 
-    const role = currentUserData.role || 'user';
+    const role = currentUserData.role;
     document.getElementById('nav-auth').innerHTML = `
         <div class="flex items-center space-x-4">
             <span class="text-sm font-medium text-slate-600 hidden sm:inline">
@@ -143,24 +142,25 @@ function showDashboard() {
             <span class="text-xs uppercase bg-indigo-50 text-indigo-700 px-3 py-1 rounded-full font-semibold">
                 <i class="fa-solid fa-shield-halved mr-1"></i> ${role}
             </span>
-            <button onclick="handleLogout()" class="text-sm font-medium text-red-600 hover:text-red-700 transition flex items-center gap-1">
+            <button onclick="handleLogout()" class="text-sm font-medium text-indigo-600 hover:text-indigo-700 transition flex items-center gap-1">
                 <i class="fa-solid fa-right-from-bracket"></i> Logout
             </button>
         </div>
     `;
 
     document.getElementById('btn-new-report').classList.toggle('hidden', role !== 'user');
-    document.getElementById('admin-stats').classList.toggle('hidden', role !== 'admin');
-    document.getElementById('admin-users-section').classList.toggle('hidden', role !== 'admin');
+
+    const isAdmin = role === 'admin';
+    document.getElementById('admin-stats').classList.toggle('hidden', !isAdmin);
+    document.getElementById('admin-users-section').classList.toggle('hidden', !isAdmin);
 
     loadReports();
-    if (role === 'admin') loadUsers();
+    if (isAdmin) loadUsers();
 }
 
 // ====================== REGISTER ======================
 async function handleRegister(event) {
     event.preventDefault();
-
     const username = document.getElementById('regUsername').value.trim();
     const email = document.getElementById('regEmail').value.trim();
     const password = document.getElementById('regPassword').value;
@@ -172,83 +172,74 @@ async function handleRegister(event) {
         return;
     }
 
-    try {
-        // Check username uniqueness
-        const usernameCheck = await db.collection('users').where('username', '==', username).get();
-        if (!usernameCheck.empty) {
-            showAlert("Username already taken. Please choose another.", "Error");
-            return;
-        }
+    const submitBtn = event.target.querySelector('button[type="submit"]');
+    const originalText = submitBtn.innerHTML;
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-1"></i> Creating Account...`;
 
-        // Create Auth account
+    try {
         const cred = await auth.createUserWithEmailAndPassword(email, password);
 
-        // First user becomes admin
-        const allUsers = await db.collection('users').get();
-        const role = allUsers.empty ? 'admin' : 'user';
+        let role = 'user';
+        try {
+            const allUsers = await db.collection('users').get();
+            if (allUsers.empty) {
+                role = 'admin';
+            }
+        } catch (err) {
+            console.warn("User collection query notice:", err);
+        }
 
-        // Save user profile
         await db.collection('users').doc(cred.user.uid).set({
             id: cred.user.uid,
-            username: username,
-            email: email,
-            contact: contact,
-            address: address,
-            role: role,
+            username,
+            email,
+            contact,
+            address,
+            role,
             createdAt: firebase.firestore.FieldValue.serverTimestamp()
         });
 
-        // Success message
-        showAlert("Account created successfully! You can now login.", "Success");
+        showAlert("Account created successfully!", "Success");
         closeRegisterModal();
-
-        // Clear form
-        document.getElementById('regUsername').value = '';
-        document.getElementById('regEmail').value = '';
-        document.getElementById('regPassword').value = '';
-        document.getElementById('regContact').value = '';
-        document.getElementById('regAddress').value = '';
-
-        // Open login modal
-        setTimeout(() => openLoginModal(), 500);
-
+        event.target.reset();
     } catch (error) {
-        console.error(error);
-        if (error.code === 'auth/email-already-in-use') {
-            showAlert("This email is already registered. Please login instead.", "Registration Failed");
-        } else {
-            showAlert(error.message, "Registration Failed");
-        }
+        showAlert(error.message, "Registration Failed");
+    } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = originalText;
     }
 }
 
-// ====================== LOGIN (using Username) ======================
+// ====================== LOGIN ======================
 async function handleLogin(event) {
     event.preventDefault();
-
-    const usernameOrEmail = document.getElementById('loginEmail').value.trim();
+    const username = document.getElementById('loginUsername').value.trim();
     const password = document.getElementById('loginPassword').value;
 
-    try {
-        let email = usernameOrEmail;
+    const submitBtn = event.target.querySelector('button[type="submit"]');
+    const originalText = submitBtn.innerHTML;
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-1"></i> Logging in...`;
 
-        // If user typed username instead of email
-        if (!usernameOrEmail.includes('@')) {
-            const snapshot = await db.collection('users').where('username', '==', usernameOrEmail).get();
-            if (snapshot.empty) {
-                showAlert("Username not found.", "Login Failed");
-                return;
-            }
-            email = snapshot.docs[0].data().email;
+    try {
+        const userQuery = await db.collection('users').where('username', '==', username).get();
+        if (userQuery.empty) {
+            showAlert("Username not found.", "Login Failed");
+            return;
         }
+
+        const userData = userQuery.docs[0].data();
+        const email = userData.email;
 
         await auth.signInWithEmailAndPassword(email, password);
         closeLoginModal();
-        showAlert("Login successful!", "Welcome");
-
+        event.target.reset();
     } catch (error) {
-        console.error(error);
-        showAlert("Invalid username/email or password.", "Login Failed");
+        showAlert("Invalid username or password.", "Login Failed");
+    } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = originalText;
     }
 }
 
@@ -268,7 +259,7 @@ async function loadReports() {
             cachedReports.push({ id: doc.id, ...doc.data() });
         });
 
-        if (currentUserData && currentUserData.role === 'admin') {
+        if (currentUserData.role === 'admin') {
             document.getElementById('stat-total').innerText = cachedReports.length;
             document.getElementById('stat-active').innerText = cachedReports.filter(r => r.status === 'active').length;
             document.getElementById('stat-pending').innerText = cachedReports.filter(r => r.status === 'pending_approval').length;
@@ -282,18 +273,8 @@ async function loadReports() {
 
         renderReports();
     } catch (error) {
+        container.innerHTML = `<p class="text-sm text-indigo-500">Error loading reports.</p>`;
         console.error(error);
-        // Fallback without orderBy if index is missing
-        try {
-            const snapshot = await db.collection('reports').get();
-            cachedReports = [];
-            snapshot.forEach(doc => {
-                cachedReports.push({ id: doc.id, ...doc.data() });
-            });
-            renderReports();
-        } catch (err) {
-            container.innerHTML = `<p class="text-sm text-red-500">Error loading reports.</p>`;
-        }
     }
 }
 
@@ -317,7 +298,7 @@ function renderReports() {
             <div class="border border-slate-200 rounded-2xl p-5 bg-white shadow-sm flex flex-col justify-between space-y-4 hover:border-slate-300 transition">
                 <div class="space-y-3">
                     <div class="flex justify-between items-center">
-                        <span class="px-3 py-1 text-xs font-semibold rounded-full uppercase ${r.type === 'lost' ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}">
+                        <span class="px-3 py-1 text-xs font-semibold rounded-full uppercase ${r.type === 'lost' ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}">
                             <i class="fa-solid ${r.type === 'lost' ? 'fa-circle-question' : 'fa-circle-check'} mr-1"></i> ${r.type}
                         </span>
                         <span class="text-xs px-2.5 py-0.5 rounded-md font-medium ${statusColor}">${r.status || 'active'}</span>
@@ -351,7 +332,7 @@ function renderReports() {
                                             <button onclick="processApproval('${r.id}', 'accept', '${c.claim_id}')" class="text-xs bg-emerald-600 text-white px-2.5 py-1.5 rounded-lg hover:bg-emerald-700 transition font-medium">
                                                 <i class="fa-solid fa-check mr-1"></i> Accept
                                             </button>
-                                            <button onclick="processApproval('${r.id}', 'reject', '${c.claim_id}')" class="text-xs bg-red-600 text-white px-2.5 py-1.5 rounded-lg hover:bg-red-700 transition font-medium">
+                                            <button onclick="processApproval('${r.id}', 'reject', '${c.claim_id}')" class="text-xs bg-indigo-600 text-white px-2.5 py-1.5 rounded-lg hover:bg-indigo-700 transition font-medium">
                                                 <i class="fa-solid fa-xmark mr-1"></i> Reject
                                             </button>
                                         </div>
@@ -384,7 +365,7 @@ function renderReports() {
                             ` : ''}
 
                             ${(isMyReport || isStaffOrAdmin) ? `
-                                <button onclick="deleteReport('${r.id}')" class="text-xs bg-red-50 text-red-600 px-2.5 py-1.5 rounded-lg hover:bg-red-100 transition font-medium">
+                                <button onclick="deleteReport('${r.id}')" class="text-xs bg-indigo-50 text-indigo-600 px-2.5 py-1.5 rounded-lg hover:bg-indigo-100 transition font-medium">
                                     <i class="fa-solid fa-trash"></i>
                                 </button>
                             ` : ''}
@@ -399,7 +380,6 @@ function renderReports() {
 // ====================== CREATE / UPDATE REPORT ======================
 async function handleSaveReport(event) {
     event.preventDefault();
-
     const reportId = document.getElementById('reportId').value;
     const type = document.getElementById('reportType').value;
     const item_name = document.getElementById('reportItemName').value.trim();
@@ -408,31 +388,20 @@ async function handleSaveReport(event) {
     const date = document.getElementById('reportDate').value;
     const image = document.getElementById('reportImageBase64').value;
 
-    if (!item_name || !place || !date) {
-        showAlert("Please fill in all required fields.", "Validation Error");
-        return;
-    }
-
     try {
         if (reportId) {
-            // Update existing
             await db.collection('reports').doc(reportId).update({
-                item_name,
-                description,
-                place,
-                date,
-                image
+                item_name, description, place, date, image
             });
             showAlert("Report updated successfully!", "Success");
         } else {
-            // Create new
             await db.collection('reports').add({
                 type,
                 item_name,
                 description,
                 place,
                 date,
-                image: image || '',
+                image,
                 status: 'active',
                 reporter_id: currentUser.uid,
                 reporter_username: currentUserData.username,
@@ -442,13 +411,10 @@ async function handleSaveReport(event) {
             });
             showAlert("Report created successfully!", "Success");
         }
-
         closeReportModal();
         loadReports();
-
     } catch (error) {
-        console.error(error);
-        showAlert("Failed to save report: " + error.message, "Error");
+        showAlert(error.message, "Error");
     }
 }
 
@@ -465,16 +431,13 @@ async function submitClaimWithProof() {
     try {
         const reportRef = db.collection('reports').doc(reportId);
         const doc = await reportRef.get();
-        if (!doc.exists) {
-            showAlert("Report not found.", "Error");
-            return;
-        }
+        if (!doc.exists) return;
 
         const report = doc.data();
         const claims = report.claims || [];
 
         if (claims.some(c => c.user_id === currentUser.uid)) {
-            showAlert("You already submitted a claim for this item.", "Error");
+            showAlert("You already claimed this item.", "Error");
             return;
         }
 
@@ -482,28 +445,25 @@ async function submitClaimWithProof() {
             claim_id: db.collection('reports').doc().id,
             user_id: currentUser.uid,
             username: currentUserData.username,
-            proof: proof
+            proof
         });
 
         await reportRef.update({
             status: 'pending_approval',
-            claims: claims
+            claims
         });
 
         closeClaimModal();
         showAlert("Claim submitted for review!", "Success");
         loadReports();
-
     } catch (error) {
-        console.error(error);
-        showAlert("Failed to submit claim.", "Error");
+        showAlert(error.message, "Error");
     }
 }
 
 // ====================== APPROVAL ======================
 async function processApproval(reportId, action, claimId) {
-    const msg = action === 'accept' ? "Accept this claim as the correct match?" : "Reject this claim?";
-    
+    const msg = action === 'accept' ? "Accept this claim?" : "Reject this claim?";
     showConfirm(msg, async () => {
         try {
             const reportRef = db.collection('reports').doc(reportId);
@@ -513,17 +473,15 @@ async function processApproval(reportId, action, claimId) {
 
             if (action === 'accept') {
                 await reportRef.update({ status: 'claimed' });
-                showAlert("Claim approved!", "Success");
             } else {
                 claims = claims.filter(c => c.claim_id !== claimId);
-                const updateData = { claims: claims };
+                const updateData = { claims };
                 if (claims.length === 0) updateData.status = 'active';
                 await reportRef.update(updateData);
-                showAlert("Claim rejected.", "Success");
             }
             loadReports();
         } catch (error) {
-            showAlert("Action failed.", "Error");
+            showAlert(error.message, "Error");
         }
     }, `Confirm ${action.toUpperCase()}`);
 }
@@ -533,10 +491,9 @@ function deleteReport(reportId) {
     showConfirm("Are you sure you want to delete this report?", async () => {
         try {
             await db.collection('reports').doc(reportId).delete();
-            showAlert("Report deleted.", "Success");
             loadReports();
         } catch (error) {
-            showAlert("Failed to delete report.", "Error");
+            showAlert(error.message, "Error");
         }
     }, "Delete Report");
 }
@@ -545,7 +502,7 @@ function deleteReport(reportId) {
 function renderChatMessages(messages) {
     const container = document.getElementById('chatMessagesContainer');
     if (!messages || messages.length === 0) {
-        container.innerHTML = `<p class="text-xs text-slate-400 text-center py-4">No messages yet. Start the conversation!</p>`;
+        container.innerHTML = `<p class="text-xs text-slate-400 text-center py-4">No messages yet.</p>`;
         return;
     }
     container.innerHTML = messages.map(m => `
@@ -573,18 +530,16 @@ async function sendChatMessage() {
             sender_id: currentUser.uid,
             sender_username: currentUserData.username,
             sender_role: currentUserData.role,
-            message: message,
+            message,
             timestamp: new Date().toISOString()
         });
 
-        await reportRef.update({ messages: messages });
+        await reportRef.update({ messages });
         document.getElementById('chatInputMessage').value = '';
         renderChatMessages(messages);
 
-        // Update cache
         const report = cachedReports.find(r => r.id === reportId);
         if (report) report.messages = messages;
-
     } catch (error) {
         showAlert("Failed to send message.", "Error");
     }
@@ -616,11 +571,11 @@ async function loadUsers() {
                     <td class="py-3.5 px-4 text-slate-600">${u.email}</td>
                     <td class="py-3.5 px-4"><span class="px-2.5 py-1 rounded-full bg-slate-100 text-xs font-semibold text-slate-700">${u.role}</span></td>
                     <td class="py-3.5 px-4 text-right space-x-2">
-                        ${u.username !== currentUserData.username ? `
-                            <button onclick="deleteUser('${doc.id}', '${u.username}')" class="text-xs text-red-600 hover:text-red-800 font-medium px-2.5 py-1 rounded-md bg-red-50 transition">
+                        ${u.role !== 'admin' || u.username !== currentUserData.username ? `
+                            <button onclick="deleteUser('${doc.id}', '${u.username}')" class="text-xs text-indigo-600 hover:text-indigo-800 font-medium px-2.5 py-1 rounded-md bg-indigo-50 transition">
                                 <i class="fa-solid fa-trash"></i> Delete
                             </button>
-                        ` : `<span class="text-xs text-slate-400 italic">You</span>`}
+                        ` : `<span class="text-xs text-slate-400 italic">Protected</span>`}
                     </td>
                 </tr>
             `;
@@ -629,7 +584,7 @@ async function loadUsers() {
         html += `</tbody></table>`;
         container.innerHTML = html;
     } catch (error) {
-        container.innerHTML = `<p class="text-sm text-red-500">Error loading users.</p>`;
+        container.innerHTML = `<p class="text-sm text-indigo-500">Error loading users.</p>`;
     }
 }
 
@@ -653,9 +608,9 @@ async function handleAdminCreateUser(event) {
             createdAt: firebase.firestore.FieldValue.serverTimestamp()
         });
 
-        showAlert(`${role} account created successfully!`, "Success");
+        showAlert(`${role} account created! Please log out and log back in as admin.`, "Success");
         closeAdminCreateModal();
-        await auth.signOut(); // force re-login as admin
+        await auth.signOut();
     } catch (error) {
         showAlert(error.message, "Error");
     }
@@ -665,10 +620,10 @@ function deleteUser(userId, username) {
     showConfirm(`Delete user "${username}"?`, async () => {
         try {
             await db.collection('users').doc(userId).delete();
-            showAlert("User deleted.", "Success");
             loadUsers();
+            showAlert("User deleted from database.", "Success");
         } catch (error) {
-            showAlert("Failed to delete user.", "Error");
+            showAlert(error.message, "Error");
         }
     }, "Delete User");
 }
