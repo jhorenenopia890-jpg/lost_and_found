@@ -171,9 +171,14 @@ function showDashboard() {
     // Show New Report button only for regular users
     document.getElementById('btn-new-report').classList.toggle('hidden', role !== 'user');
 
-    // Admin stats & user management sections displayed for admin
+    // Admin view logic: Hide reports section for admin, show admin stats & user management sections
     document.getElementById('admin-stats').classList.toggle('hidden', !isAdmin);
+    document.getElementById('reports-section').classList.toggle('hidden', isAdmin);
     document.getElementById('admin-users-section').classList.toggle('hidden', !isAdmin);
+
+    document.getElementById('dashboard-subtitle').innerText = isAdmin 
+        ? "Overview of system statistics and staff/admin user management." 
+        : "Manage, track, claim, and communicate about lost or found reports.";
 
     loadReports();
     if (isAdmin) loadUsers();
@@ -259,6 +264,8 @@ async function loadReports() {
             document.getElementById('stat-claimed').innerText = cachedReports.filter(r => r.status === 'claimed').length;
         }
 
+        if (currentUserData.role === 'admin') return; // Admin doesn't render report list
+
         if (cachedReports.length === 0) {
             container.innerHTML = `<p class="text-sm text-slate-500 col-span-full">No reports found.</p>`;
             return;
@@ -278,7 +285,7 @@ function renderReports() {
 
     container.innerHTML = cachedReports.map(r => {
         const isMyReport = r.reporter_id === uid;
-        const isStaffOrAdmin = role === 'admin' || role === 'staff';
+        const isStaff = role === 'staff';
         const claims = r.claims || [];
         const hasAlreadyClaimed = claims.some(c => c.user_id === uid);
         const messages = r.messages || [];
@@ -313,7 +320,8 @@ function renderReports() {
                     <p class="flex items-center gap-1.5"><i class="fa-solid fa-location-dot text-indigo-500"></i> <span class="text-slate-700 font-medium">${r.place || 'N/A'}</span></p>
                     <p class="flex items-center gap-1.5"><i class="fa-solid fa-calendar-days text-indigo-500"></i> <span class="text-slate-700 font-medium">${r.date || 'N/A'}</span></p>
 
-                    ${isStaffOrAdmin && claims.length > 0 ? `
+                    <!-- Staff can view claims and accept/reject -->
+                    ${isStaff && claims.length > 0 ? `
                         <div class="bg-purple-50 p-3 rounded-xl space-y-2 border border-purple-100">
                             <p class="font-bold text-purple-800 text-xs"><i class="fa-solid fa-triangle-exclamation mr-1"></i> Pending Claims (${claims.length}):</p>
                             ${claims.map(c => `
@@ -350,7 +358,7 @@ function renderReports() {
 
                             ${hasAlreadyClaimed ? `<span class="text-xs bg-purple-100 text-purple-700 font-medium px-2.5 py-1 rounded-lg">Claim Pending</span>` : ''}
 
-                            <!-- Users cannot claim their own report (!isMyReport) -->
+                            <!-- Only regular 'user' role can claim, and cannot claim their own report -->
                             ${r.status !== 'claimed' && !isMyReport && role === 'user' && !hasAlreadyClaimed ? `
                                 <button onclick="openClaimModal('${r.id}')" class="text-xs bg-indigo-600 text-white px-2.5 py-1.5 rounded-lg hover:bg-indigo-700 transition font-medium">
                                     <i class="fa-solid fa-hand-holding-heart mr-1"></i> Claim
@@ -363,7 +371,7 @@ function renderReports() {
                                 </button>
                             ` : ''}
 
-                            ${(isMyReport || isStaffOrAdmin) ? `
+                            ${(isMyReport || isStaff) ? `
                                 <button onclick="deleteReport('${r.id}')" class="text-xs bg-red-50 text-red-600 px-2.5 py-1.5 rounded-lg hover:bg-red-100 transition font-medium">
                                     <i class="fa-solid fa-trash"></i>
                                 </button>
@@ -435,6 +443,11 @@ async function submitClaimWithProof() {
 
         const report = doc.data();
         const claims = report.claims || [];
+
+        if (currentUserData.role !== 'user') {
+            showAlert("Staff and Admin accounts are not allowed to claim items.", "Error");
+            return;
+        }
 
         if (report.reporter_id === currentUser.uid) {
             showAlert("You cannot claim your own report.", "Error");
