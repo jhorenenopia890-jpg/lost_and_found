@@ -75,6 +75,8 @@ function closeReportModal() { document.getElementById('reportModal').classList.a
 function openClaimModal(reportId) {
     document.getElementById('claimReportId').value = reportId;
     document.getElementById('claimProofText').value = '';
+    document.getElementById('claimProofImageFile').value = '';
+    document.getElementById('claimProofImageBase64').value = '';
     document.getElementById('claimModal').classList.remove('hidden');
 }
 function closeClaimModal() { document.getElementById('claimModal').classList.add('hidden'); }
@@ -87,13 +89,25 @@ function openChatModal(reportId) {
 }
 function closeChatModal() { document.getElementById('chatModal').classList.add('hidden'); }
 
-// Image to Base64
+// Image to Base64 for Reports
 document.getElementById('reportImageFile').addEventListener('change', function (e) {
     const file = e.target.files[0];
     if (file) {
         const reader = new FileReader();
         reader.onloadend = function () {
             document.getElementById('reportImageBase64').value = reader.result;
+        };
+        reader.readAsDataURL(file);
+    }
+});
+
+// Image to Base64 for Claim Proofs
+document.getElementById('claimProofImageFile').addEventListener('change', function (e) {
+    const file = e.target.files[0];
+    if (file) {
+        const reader = new FileReader();
+        reader.onloadend = function () {
+            document.getElementById('claimProofImageBase64').value = reader.result;
         };
         reader.readAsDataURL(file);
     }
@@ -157,19 +171,12 @@ function showDashboard() {
     // Show New Report button only for regular users
     document.getElementById('btn-new-report').classList.toggle('hidden', role !== 'user');
 
-    // Admin view logic: Hide general reports section for admins, show user management section exclusively
-    document.getElementById('reports-section').classList.toggle('hidden', isAdmin);
+    // Admin stats & user management sections displayed for admin
+    document.getElementById('admin-stats').classList.toggle('hidden', !isAdmin);
     document.getElementById('admin-users-section').classList.toggle('hidden', !isAdmin);
 
-    document.getElementById('dashboard-subtitle').innerText = isAdmin 
-        ? "Manage staff and user accounts, update credentials securely." 
-        : "Manage, track, claim, and communicate about lost or found reports.";
-
-    if (isAdmin) {
-        loadUsers();
-    } else {
-        loadReports();
-    }
+    loadReports();
+    if (isAdmin) loadUsers();
 }
 
 // ====================== REGISTER ======================
@@ -244,6 +251,14 @@ async function loadReports() {
             cachedReports.push({ id: doc.id, ...doc.data() });
         });
 
+        // Admin stats update
+        if (currentUserData.role === 'admin') {
+            document.getElementById('stat-total').innerText = cachedReports.length;
+            document.getElementById('stat-active').innerText = cachedReports.filter(r => r.status === 'active' || !r.status).length;
+            document.getElementById('stat-pending').innerText = cachedReports.filter(r => r.status === 'pending_approval').length;
+            document.getElementById('stat-claimed').innerText = cachedReports.filter(r => r.status === 'claimed').length;
+        }
+
         if (cachedReports.length === 0) {
             container.innerHTML = `<p class="text-sm text-slate-500 col-span-full">No reports found.</p>`;
             return;
@@ -302,9 +317,14 @@ function renderReports() {
                         <div class="bg-purple-50 p-3 rounded-xl space-y-2 border border-purple-100">
                             <p class="font-bold text-purple-800 text-xs"><i class="fa-solid fa-triangle-exclamation mr-1"></i> Pending Claims (${claims.length}):</p>
                             ${claims.map(c => `
-                                <div class="bg-white p-2.5 rounded-lg border border-purple-200 space-y-1 shadow-sm">
+                                <div class="bg-white p-2.5 rounded-lg border border-purple-200 space-y-2 shadow-sm">
                                     <p class="font-semibold text-slate-800"><i class="fa-solid fa-user mr-1 text-purple-500"></i> ${c.username}</p>
-                                    <p class="text-slate-600 italic">Proof: "${c.proof}"</p>
+                                    <p class="text-slate-600 italic">Proof text: "${c.proof}"</p>
+                                    ${c.image ? `
+                                        <div class="w-full h-32 bg-slate-100 rounded-lg overflow-hidden border border-slate-200 mt-1">
+                                            <img src="${c.image}" alt="Proof Image" class="w-full h-full object-cover">
+                                        </div>
+                                    ` : ''}
                                     ${r.status === 'pending_approval' ? `
                                         <div class="flex gap-2 pt-1.5">
                                             <button onclick="processApproval('${r.id}', 'accept', '${c.claim_id}')" class="text-xs bg-emerald-600 text-white px-2.5 py-1.5 rounded-lg hover:bg-emerald-700 transition font-medium">
@@ -330,7 +350,8 @@ function renderReports() {
 
                             ${hasAlreadyClaimed ? `<span class="text-xs bg-purple-100 text-purple-700 font-medium px-2.5 py-1 rounded-lg">Claim Pending</span>` : ''}
 
-                            ${r.status !== 'claimed' && !(r.type === 'found' && isMyReport) && role === 'user' && !hasAlreadyClaimed ? `
+                            <!-- Users cannot claim their own report (!isMyReport) -->
+                            ${r.status !== 'claimed' && !isMyReport && role === 'user' && !hasAlreadyClaimed ? `
                                 <button onclick="openClaimModal('${r.id}')" class="text-xs bg-indigo-600 text-white px-2.5 py-1.5 rounded-lg hover:bg-indigo-700 transition font-medium">
                                     <i class="fa-solid fa-hand-holding-heart mr-1"></i> Claim
                                 </button>
@@ -400,9 +421,10 @@ async function handleSaveReport(event) {
 async function submitClaimWithProof() {
     const reportId = document.getElementById('claimReportId').value;
     const proof = document.getElementById('claimProofText').value.trim();
+    const proofImage = document.getElementById('claimProofImageBase64').value;
 
-    if (!proof) {
-        showAlert("Please enter proof details.", "Required");
+    if (!proof || !proofImage) {
+        showAlert("Please provide both text proof details and a photo proof.", "Required");
         return;
     }
 
@@ -414,6 +436,11 @@ async function submitClaimWithProof() {
         const report = doc.data();
         const claims = report.claims || [];
 
+        if (report.reporter_id === currentUser.uid) {
+            showAlert("You cannot claim your own report.", "Error");
+            return;
+        }
+
         if (claims.some(c => c.user_id === currentUser.uid)) {
             showAlert("You already claimed this item.", "Error");
             return;
@@ -423,7 +450,8 @@ async function submitClaimWithProof() {
             claim_id: db.collection('reports').doc().id,
             user_id: currentUser.uid,
             username: currentUserData.username,
-            proof
+            proof,
+            image: proofImage
         });
 
         await reportRef.update({
@@ -432,7 +460,7 @@ async function submitClaimWithProof() {
         });
 
         closeClaimModal();
-        showAlert("Claim submitted for review!", "Success");
+        showAlert("Claim submitted with text and photo proof for review!", "Success");
         loadReports();
     } catch (error) {
         showAlert(error.message, "Error");
@@ -610,7 +638,6 @@ async function handleAdminUpdateUser(event) {
     const newPassword = document.getElementById('editPassword').value;
 
     try {
-        // Check uniqueness of username if changed
         const userDocRef = db.collection('users').doc(userId);
         const userDoc = await userDocRef.get();
         if (!userDoc.exists) return;
@@ -623,18 +650,12 @@ async function handleAdminUpdateUser(event) {
             }
         }
 
-        // Update Firestore username
         await userDocRef.update({ username: newUsername });
 
-        // Note: Client-side Firebase Auth password updates require the user to be currently signed in.
-        // If updating another user's password client-side, Firestore updates the profile data. 
-        // For security, true backend password resets are typically handled via Firebase Admin SDK or auth.sendPasswordResetEmail.
         if (newPassword && newPassword.length >= 6) {
             if (userId === currentUser.uid) {
                 await currentUser.updatePassword(newPassword);
             } else {
-                // If updating another user's auth credential directly from client SDK without session, 
-                // send a password reset email as a secure alternative fallback:
                 await auth.sendPasswordResetEmail(userDoc.data().email);
                 showAlert("Username updated. A password reset email was sent to the user's email address.", "Success");
                 closeAdminEditModal();
